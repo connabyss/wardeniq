@@ -1824,11 +1824,18 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         if evidence_sufficient["business"] else 0
     )
     if enabled["functional"] and len(business_tests) < acceptable_business_min:
+        # Top up to the floor, not past it (#48). This call used to ask for one test per
+        # rule regardless of what the E2E call had already written, so it re-tested
+        # covered rules (duplicates, dropped later) and wrote well past the floor, only
+        # for _budget_suites() to trim the extra. It was the largest single output in
+        # the benchmark runs (37-48% of all output tokens for qwen2.5/llama3.2).
         try:
             fallback = call_llm_json_with_repair(
                 llm, SYSTEM,
                 build_business_test_prompt(
-                    context, business_rag_context, top_k=_category_top_k("business", is_ollama)
+                    context, business_rag_context, top_k=_category_top_k("business", is_ollama),
+                    existing_tests=business_tests,
+                    max_new=acceptable_business_min - len(business_tests),
                 ),
                 max_tokens=6000,
                 timeout_seconds=resolve_timeout(240),

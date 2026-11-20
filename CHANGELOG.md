@@ -22,6 +22,12 @@
 
 ### Changed
 
+- **Shorter business-rule fallback.** When the combined E2E call writes too few business
+  tests, the fallback now only tops the suite up to its floor: it is shown the business
+  tests that already exist and asked for at most the missing number, on rules they don't
+  cover. It used to ask for one test per rule every time, re-testing covered rules and
+  writing tests that the final budget then trimmed. In the benchmark runs this one call
+  was 37 to 48% of all output tokens (#48).
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

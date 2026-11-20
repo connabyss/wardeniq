@@ -1612,7 +1612,20 @@ The values below are examples - replace each one with real values from the evide
   ]
 }}""".strip()
 
-def build_business_test_prompt(context: dict, rag_context: dict = None, top_k: int = 6) -> str:
+def build_business_test_prompt(
+    context: dict,
+    rag_context: dict = None,
+    top_k: int = 6,
+    existing_tests: list = None,
+    max_new: int = None,
+) -> str:
+    """Prompt for the business-rule fallback.
+
+    With `existing_tests` and `max_new` (the pipeline's top-up call), the model is shown
+    the business tests the combined E2E call already wrote and asked only for up to
+    `max_new` tests on rules none of them covers. Without them it asks for one test per
+    rule, as before.
+    """
     # Raw context["summaries"]["prd"] is intentionally not read here -- mirrors the
     # redundant-bulk-text removal already applied to build_shared_context_block() /
     # build_e2e_agent_prompt() / build_e2e_fallback_prompt(). The structured
@@ -1639,6 +1652,30 @@ def build_business_test_prompt(context: dict, rag_context: dict = None, top_k: i
 
     max_tests = len(business_rules) if business_rules else 10
     count_instruction = f"The requirement evidence contains {len(business_rules)} distinct rules. Generate exactly {len(business_rules)} tests — one per rule." if business_rules else "Count the distinct rules in the evidence below. Generate exactly one test per rule. Do not group rules together."
+    existing_block = ""
+    if max_new is not None and max_new > 0:
+        covered = [
+            str(test.get("intent") or test.get("title") or "").strip()
+            for test in (existing_tests or []) if isinstance(test, dict)
+        ]
+        covered = [line for line in covered if line]
+        max_tests = min(max_tests, max_new)
+        if covered:
+            count_instruction = (
+                f"{len(covered)} business rule tests already exist for this feature (listed "
+                f"under ALREADY COVERED below). Generate at most {max_tests} more tests, one "
+                "per rule that none of them covers. A test for a rule that is already "
+                "covered makes the response invalid. If every rule is already covered, "
+                "output {\"business_tests\": []}."
+            )
+            existing_block = "ALREADY COVERED (do not test these rules again):\n" + "\n".join(
+                f"- {line}" for line in covered
+            ) + "\n\n"
+        else:
+            count_instruction = (
+                f"Generate at most {max_tests} tests, one per distinct rule in the evidence "
+                "below. Do not group rules together."
+            )
 
     return f"""{output_contract_header('Generate one business rule test per requirement rule')}
 
@@ -1658,7 +1695,7 @@ OUTPUT CEILING: Output at most {max_tests} tests. Generating a test for a topic 
 BUSINESS CONTEXT (structured — authoritative for which rules exist):
 {json.dumps(business_context, indent=2)}
 
-RETRIEVED EVIDENCE (business-category retrieval — supporting detail for the rules above):
+{existing_block}RETRIEVED EVIDENCE (business-category retrieval — supporting detail for the rules above):
 {rag_evidence}
 
 OUTPUT SCHEMA:
